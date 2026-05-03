@@ -4,7 +4,7 @@ Denim - Garment  MANAGEMENT SYSTEM  — Mobile App
 
 01. GitHub Repository Link
 ----------------------------------------
-GitHub Repository: []
+GitHub Repository: [https://github.com/it24100198/Mobile_App_wmt.git]
 
 
 02. Team Details 
@@ -12,28 +12,23 @@ GitHub Repository: []
 Group Number: WE_IT_02
 Member 1: IT24100198 – Pavinthan.V – Employee Management & Expense Management
 
-Member 2: IT24100891 – Meththasinghe M.D.D.T – Production Order 
-Tracking System
+Member 2: IT24100891 – Meththasinghe M.D.D.T – Production Order Tracking System
 
 
-Member 3: IT24101974 – Rajapaksha D.M.A.N. – Manufacturing 
-Management 
+Member 3: IT24101974 – Rajapaksha D.M.A.N. – Manufacturing Management 
 
 
-Member 4: IT24100480 – Jeeveith T.R. – Product & Stock 
-Management 
+Member 4: IT24100480 – Jeeveith T.R. – Product & Stock Management 
 
 
-Member 5: IT24102097 –Safran S.M. – Purchase 
-Management 
+Member 5: IT24102097 –Safran S.M. – Purchase Management 
 
-Member 6: IT24100824 – Gunasena P.G.P. – Sales & POS 
-System 
+Member 6: IT24100824 – Gunasena P.G.P. – Sales & POS System 
 
 
 03. Deployment Details
 ----------------------------------------
-Backend URL: []
+Backend URL: [https://mobileappwmt-production.up.railway.app/]
 
 
 
