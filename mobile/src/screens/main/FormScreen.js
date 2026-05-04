@@ -5,8 +5,8 @@ import Card from '../../components/Card';
 import LoadingState from '../../components/LoadingState';
 import ScreenScaffold from '../../components/ScreenScaffold';
 import TextField from '../../components/TextField';
-import { getSections } from '../../api/client';
-import { expensesApi, purchaseApi } from '../../api/erp';
+import { getMaterials, getSections } from '../../api/client';
+import { expensesApi, purchaseApi, salesApi } from '../../api/erp';
 import { findModuleItem } from '../../navigation/modules';
 import { colors } from '../../theme/colors';
 
@@ -28,6 +28,13 @@ const conditions = ['good', 'damaged'];
 const productStatuses = ['draft', 'active', 'inactive'];
 const productClassifications = ['normal', 'damage'];
 const adjustmentTypes = ['add', 'subtract'];
+const quoteStatuses = ['draft', 'sent', 'approved', 'rejected'];
+const salesOrderStatuses = ['pending', 'confirmed', 'processing', 'dispatched', 'delivered', 'cancelled'];
+const invoiceTypes = ['tax', 'proforma'];
+const deliveryStatuses = ['pending', 'packed', 'shipped', 'delivered'];
+const returnStatuses = ['pending', 'approved', 'rejected', 'completed'];
+const refundTypes = ['credit_note', 'replacement', 'refund'];
+const returnConditions = ['sellable', 'damaged'];
 
 const labels = {
   bank_transfer: 'Bank transfer',
@@ -110,10 +117,15 @@ export default function FormScreen({ route, navigation }) {
   const [suppliers, setSuppliers] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [manufacturingMaterialsLoading, setManufacturingMaterialsLoading] = useState(false);
+  const [manufacturingMaterials, setManufacturingMaterials] = useState([]);
+  const [salesMetaLoading, setSalesMetaLoading] = useState(false);
+  const [salesOrders, setSalesOrders] = useState([]);
   const item = findModuleItem(route.params?.moduleKey, route.params?.itemKey);
   const formKey = route.params?.itemKey;
   const isEditing = route.params?.mode === 'edit';
   const editingRecord = route.params?.record || null;
+  const prefill = route.params?.prefill || null;
 
   const [categoryForm, setCategoryForm] = useState({
     name: '',
@@ -135,6 +147,8 @@ export default function FormScreen({ route, navigation }) {
     receiptUrl: '',
     approvedBy: '',
     status: 'pending',
+    isRecurring: false,
+    recurringMonth: '',
   });
 
   const [reimbursementForm, setReimbursementForm] = useState({
@@ -165,6 +179,14 @@ export default function FormScreen({ route, navigation }) {
     quantity: '',
     expectedDeliveryDate: today(),
     notes: '',
+  });
+
+  const [jobForm, setJobForm] = useState({
+    materialId: '',
+    issuedFabricQuantity: '',
+    styleRef: '',
+    batchRef: '',
+    accessories: '',
   });
 
   const [supplierForm, setSupplierForm] = useState({
@@ -242,11 +264,35 @@ export default function FormScreen({ route, navigation }) {
     note: '',
   });
 
+  const [salesForm, setSalesForm] = useState({
+    salesOrder: '',
+    customerName: '',
+    customerEmail: '',
+    customerPhone: '',
+    customerAddress: '',
+    itemDescription: '',
+    qty: '',
+    unitPrice: '',
+    costPrice: '',
+    taxRate: '0',
+    validUntil: today(),
+    deliveryDate: today(),
+    dueDate: today(),
+    invoiceType: 'tax',
+    status: 'draft',
+    driver: '',
+    vehicle: '',
+    refundType: 'credit_note',
+    condition: 'sellable',
+    notes: '',
+  });
+
   const updateCategory = (key, value) => setCategoryForm((prev) => ({ ...prev, [key]: value }));
   const updateExpense = (key, value) => setExpenseForm((prev) => ({ ...prev, [key]: value }));
   const updateReimbursement = (key, value) => setReimbursementForm((prev) => ({ ...prev, [key]: value }));
   const updateEmployee = (key, value) => setEmployeeForm((prev) => ({ ...prev, [key]: value }));
   const updateOrder = (key, value) => setOrderForm((prev) => ({ ...prev, [key]: value }));
+  const updateJob = (key, value) => setJobForm((prev) => ({ ...prev, [key]: value }));
   const updateSupplier = (key, value) => setSupplierForm((prev) => ({ ...prev, [key]: value }));
   const updateMaterial = (key, value) => setMaterialForm((prev) => ({ ...prev, [key]: value }));
   const updateRequisition = (key, value) => setRequisitionForm((prev) => ({ ...prev, [key]: value }));
@@ -255,9 +301,13 @@ export default function FormScreen({ route, navigation }) {
   const updateStockProduct = (key, value) => setStockProductForm((prev) => ({ ...prev, [key]: value }));
   const updateStockAdjustment = (key, value) => setStockAdjustmentForm((prev) => ({ ...prev, [key]: value }));
   const updateIssuance = (key, value) => setIssuanceForm((prev) => ({ ...prev, [key]: value }));
+  const updateSales = (key, value) => setSalesForm((prev) => ({ ...prev, [key]: value }));
 
   const needsCategories = formKey === 'expenses';
   const needsSections = formKey === 'employees';
+  const needsManufacturingMaterials = formKey === 'jobs';
+  const isSalesForm = ['quotations', 'sales-orders', 'invoices', 'delivery', 'returns'].includes(formKey);
+  const needsSalesOrders = ['invoices', 'delivery', 'returns'].includes(formKey);
   const needsPurchaseMeta = ['requisitions', 'purchase-orders', 'grn', 'adjustments', 'issuance'].includes(formKey);
 
   useEffect(() => {
@@ -287,8 +337,24 @@ export default function FormScreen({ route, navigation }) {
       receiptUrl: editingRecord.receiptUrl || '',
       approvedBy: editingRecord.approvedBy || '',
       status: editingRecord.status || 'pending',
+      isRecurring: !!editingRecord.isRecurring,
+      recurringMonth: editingRecord.recurringMonth ? String(editingRecord.recurringMonth) : '',
     });
   }, [editingRecord, formKey, isEditing]);
+
+  useEffect(() => {
+    if (formKey !== 'expenses' || isEditing || !prefill) return;
+
+    setExpenseForm((prev) => ({
+      ...prev,
+      category: prefill.category || prev.category,
+      date: prefill.date || prev.date,
+      description: prefill.description || prev.description,
+      paymentMethod: prefill.paymentMethod || prev.paymentMethod,
+      isRecurring: !!prefill.isRecurring,
+      recurringMonth: prefill.recurringMonth ? String(prefill.recurringMonth) : prev.recurringMonth,
+    }));
+  }, [formKey, isEditing, prefill]);
 
   useEffect(() => {
     if (formKey !== 'employees' || !isEditing || !editingRecord) return;
@@ -301,6 +367,87 @@ export default function FormScreen({ route, navigation }) {
       salary: String(editingRecord.salary ?? '0'),
       productionSectionId: editingRecord.productionSectionId?._id || editingRecord.productionSectionId || '',
       isActive: editingRecord.userId?.isActive !== false,
+    });
+  }, [editingRecord, formKey, isEditing]);
+
+  useEffect(() => {
+    if (formKey !== 'suppliers' || !isEditing || !editingRecord) return;
+
+    setSupplierForm({
+      name: editingRecord.name || '',
+      contactPerson: editingRecord.contactPerson || '',
+      email: editingRecord.email || '',
+      phone: editingRecord.phone || editingRecord.contactInfo || '',
+      address: editingRecord.address || '',
+      isActive: editingRecord.isActive !== false && editingRecord.status !== 'inactive',
+    });
+  }, [editingRecord, formKey, isEditing]);
+
+  useEffect(() => {
+    if (formKey !== 'materials' || !isEditing || !editingRecord) return;
+
+    setMaterialForm({
+      name: editingRecord.name || '',
+      category: editingRecord.category || 'fabric',
+      uom: editingRecord.uom || editingRecord.unit || 'pcs',
+      unitPrice: String(editingRecord.unitPrice ?? ''),
+      currentStock: String(editingRecord.currentStock ?? editingRecord.stockQuantity ?? ''),
+      description: editingRecord.description || '',
+    });
+  }, [editingRecord, formKey, isEditing]);
+
+  useEffect(() => {
+    if (formKey !== 'purchase-orders' || !isEditing || !editingRecord) return;
+
+    const firstItem = Array.isArray(editingRecord.items) ? editingRecord.items[0] : null;
+    setPurchaseOrderForm({
+      supplier: editingRecord.supplier?._id || editingRecord.supplier || '',
+      material: firstItem?.material?._id || firstItem?.material || '',
+      description: firstItem?.description || '',
+      qty: String(firstItem?.qty ?? firstItem?.quantity ?? ''),
+      unitPrice: String(firstItem?.unitPrice ?? ''),
+      expectedDeliveryDate: editingRecord.expectedDeliveryDate ? new Date(editingRecord.expectedDeliveryDate).toISOString().slice(0, 10) : today(),
+      status: editingRecord.status || 'draft',
+    });
+  }, [editingRecord, formKey, isEditing]);
+
+  useEffect(() => {
+    if (!isSalesForm || !isEditing || !editingRecord) return;
+
+    const firstItem = Array.isArray(editingRecord.items) ? editingRecord.items[0] : null;
+    setSalesForm({
+      salesOrder: editingRecord.salesOrder?._id || editingRecord.salesOrder || '',
+      customerName: editingRecord.customer?.name || '',
+      customerEmail: editingRecord.customer?.email || '',
+      customerPhone: editingRecord.customer?.phone || '',
+      customerAddress: editingRecord.customer?.address || '',
+      itemDescription: firstItem?.description || '',
+      qty: String(firstItem?.qty ?? ''),
+      unitPrice: String(firstItem?.unitPrice ?? ''),
+      costPrice: String(firstItem?.costPrice ?? ''),
+      taxRate: String(editingRecord.taxRate ?? '0'),
+      validUntil: editingRecord.validUntil ? new Date(editingRecord.validUntil).toISOString().slice(0, 10) : today(),
+      deliveryDate: editingRecord.deliveryDate ? new Date(editingRecord.deliveryDate).toISOString().slice(0, 10) : today(),
+      dueDate: editingRecord.dueDate ? new Date(editingRecord.dueDate).toISOString().slice(0, 10) : today(),
+      invoiceType: editingRecord.invoiceType || 'tax',
+      status: editingRecord.status || (formKey === 'quotations' ? 'draft' : formKey === 'sales-orders' ? 'pending' : formKey === 'delivery' ? 'pending' : 'pending'),
+      driver: editingRecord.driver || '',
+      vehicle: editingRecord.vehicle || '',
+      refundType: editingRecord.refundType || 'credit_note',
+      condition: firstItem?.condition || 'sellable',
+      notes: editingRecord.notes || firstItem?.reason || '',
+    });
+  }, [editingRecord, formKey, isEditing, isSalesForm]);
+
+  useEffect(() => {
+    if (formKey !== 'products' || !isEditing || !editingRecord) return;
+
+    setStockProductForm({
+      name: editingRecord.name || '',
+      sku: editingRecord.sku || '',
+      classification: editingRecord.classification || 'normal',
+      status: editingRecord.status || 'active',
+      stockQty: String(editingRecord.stockQty ?? ''),
     });
   }, [editingRecord, formKey, isEditing]);
 
@@ -331,6 +478,21 @@ export default function FormScreen({ route, navigation }) {
     }
   }, [needsSections]);
 
+  const loadManufacturingMaterials = useCallback(async () => {
+    if (!needsManufacturingMaterials) return;
+    setManufacturingMaterialsLoading(true);
+    try {
+      const res = await getMaterials();
+      const data = res?.data ?? res;
+      const list = Array.isArray(data) ? data : data?.items || data?.data || [];
+      setManufacturingMaterials(list.filter((material) => (material.type || material.category || '').toLowerCase() === 'fabric'));
+    } catch {
+      setManufacturingMaterials([]);
+    } finally {
+      setManufacturingMaterialsLoading(false);
+    }
+  }, [needsManufacturingMaterials]);
+
   const loadPurchaseMeta = useCallback(async () => {
     if (!needsPurchaseMeta) return;
     setPurchaseMetaLoading(true);
@@ -348,6 +510,19 @@ export default function FormScreen({ route, navigation }) {
     }
   }, [needsPurchaseMeta]);
 
+  const loadSalesMeta = useCallback(async () => {
+    if (!needsSalesOrders) return;
+    setSalesMetaLoading(true);
+    try {
+      const list = await salesApi.orders();
+      setSalesOrders(Array.isArray(list) ? list : list?.items || list?.data || []);
+    } catch {
+      setSalesOrders([]);
+    } finally {
+      setSalesMetaLoading(false);
+    }
+  }, [needsSalesOrders]);
+
   useEffect(() => {
     loadCategories();
   }, [loadCategories]);
@@ -357,14 +532,60 @@ export default function FormScreen({ route, navigation }) {
   }, [loadSections]);
 
   useEffect(() => {
+    loadManufacturingMaterials();
+  }, [loadManufacturingMaterials]);
+
+  useEffect(() => {
     loadPurchaseMeta();
   }, [loadPurchaseMeta]);
+
+  useEffect(() => {
+    loadSalesMeta();
+  }, [loadSalesMeta]);
+
+  useEffect(() => {
+    if (!isSalesForm || isEditing) return;
+    const defaultStatus = formKey === 'quotations'
+      ? 'draft'
+      : formKey === 'sales-orders'
+        ? 'pending'
+        : formKey === 'delivery'
+          ? 'pending'
+          : formKey === 'returns'
+            ? 'pending'
+            : salesForm.status;
+    if (salesForm.status !== defaultStatus) updateSales('status', defaultStatus);
+  }, [formKey, isEditing, isSalesForm, salesForm.status]);
 
   useEffect(() => {
     if (!expenseForm.category && categories[0]?._id) {
       updateExpense('category', categories[0]._id);
     }
   }, [categories, expenseForm.category]);
+
+  useEffect(() => {
+    if (!jobForm.materialId && manufacturingMaterials[0]?._id) {
+      updateJob('materialId', manufacturingMaterials[0]._id);
+    }
+  }, [jobForm.materialId, manufacturingMaterials]);
+
+  useEffect(() => {
+    if (!salesForm.salesOrder && salesOrders[0]?._id) {
+      const order = salesOrders[0];
+      updateSales('salesOrder', order._id);
+      updateSales('customerName', order.customer?.name || '');
+      updateSales('customerEmail', order.customer?.email || '');
+      updateSales('customerPhone', order.customer?.phone || '');
+      updateSales('customerAddress', order.customer?.address || '');
+      const firstItem = Array.isArray(order.items) ? order.items[0] : null;
+      if (firstItem) {
+        updateSales('itemDescription', firstItem.description || '');
+        updateSales('qty', String(firstItem.qty ?? ''));
+        updateSales('unitPrice', String(firstItem.unitPrice ?? ''));
+        updateSales('costPrice', String(firstItem.costPrice ?? ''));
+      }
+    }
+  }, [salesForm.salesOrder, salesOrders]);
 
   useEffect(() => {
     if (!requisitionForm.material && materials[0]?._id) updateRequisition('material', materials[0]._id);
@@ -408,6 +629,8 @@ export default function FormScreen({ route, navigation }) {
         receiptUrl: expenseForm.receiptUrl.trim(),
         approvedBy: expenseForm.approvedBy.trim(),
         status: expenseForm.status,
+        isRecurring: expenseForm.isRecurring,
+        recurringMonth: expenseForm.recurringMonth ? Number(expenseForm.recurringMonth) : null,
       };
     }
 
@@ -444,6 +667,16 @@ export default function FormScreen({ route, navigation }) {
         quantity: Number(orderForm.quantity),
         expectedDeliveryDate: orderForm.expectedDeliveryDate,
         notes: orderForm.notes.trim(),
+      };
+    }
+
+    if (formKey === 'jobs') {
+      return {
+        materialId: jobForm.materialId,
+        issuedFabricQuantity: Number(jobForm.issuedFabricQuantity),
+        styleRef: jobForm.styleRef.trim(),
+        batchRef: jobForm.batchRef.trim(),
+        accessories: jobForm.accessories.trim() || null,
       };
     }
 
@@ -556,8 +789,82 @@ export default function FormScreen({ route, navigation }) {
       };
     }
 
+    if (isSalesForm) {
+      const qty = Number(salesForm.qty);
+      const unitPrice = Number(salesForm.unitPrice);
+      const baseItem = {
+        description: salesForm.itemDescription.trim(),
+        qty,
+        unitPrice,
+        totalPrice: qty * unitPrice,
+      };
+      const customer = {
+        name: salesForm.customerName.trim(),
+        email: salesForm.customerEmail.trim(),
+        phone: salesForm.customerPhone.trim(),
+        address: salesForm.customerAddress.trim(),
+      };
+      if (formKey === 'quotations') {
+        return {
+          customer,
+          items: [baseItem],
+          taxRate: Number(salesForm.taxRate || 0),
+          validUntil: salesForm.validUntil,
+          status: salesForm.status,
+          notes: salesForm.notes.trim(),
+        };
+      }
+      if (formKey === 'sales-orders') {
+        return {
+          customer,
+          items: [{ ...baseItem, costPrice: Number(salesForm.costPrice || 0), material: null }],
+          taxRate: Number(salesForm.taxRate || 0),
+          status: salesForm.status,
+          deliveryDate: salesForm.deliveryDate || null,
+          notes: salesForm.notes.trim(),
+        };
+      }
+      if (formKey === 'invoices') {
+        return {
+          salesOrder: salesForm.salesOrder || null,
+          customer,
+          items: [baseItem],
+          taxRate: Number(salesForm.taxRate || 0),
+          invoiceType: salesForm.invoiceType,
+          dueDate: salesForm.dueDate || null,
+          notes: salesForm.notes.trim(),
+        };
+      }
+      if (formKey === 'delivery') {
+        return {
+          salesOrder: salesForm.salesOrder,
+          customer: { name: customer.name, phone: customer.phone, address: customer.address },
+          status: salesForm.status,
+          driver: salesForm.driver.trim(),
+          vehicle: salesForm.vehicle.trim(),
+          notes: salesForm.notes.trim(),
+        };
+      }
+      if (formKey === 'returns') {
+        return {
+          salesOrder: salesForm.salesOrder,
+          customer: { name: customer.name, phone: customer.phone },
+          items: [{
+            description: baseItem.description,
+            qty: baseItem.qty,
+            reason: salesForm.notes.trim(),
+            condition: salesForm.condition,
+            material: null,
+          }],
+          status: salesForm.status,
+          refundType: salesForm.refundType,
+          notes: salesForm.notes.trim(),
+        };
+      }
+    }
+
     return null;
-  }, [categoryForm, employeeForm, expenseForm, formKey, grnForm, issuanceForm, materialForm, orderForm, purchaseOrderForm, reimbursementForm, requisitionForm, stockAdjustmentForm, stockProductForm, supplierForm]);
+  }, [categoryForm, employeeForm, expenseForm, formKey, grnForm, isSalesForm, issuanceForm, jobForm, materialForm, orderForm, purchaseOrderForm, reimbursementForm, requisitionForm, salesForm, stockAdjustmentForm, stockProductForm, supplierForm]);
 
   const validate = () => {
     if (formKey === 'categories') {
@@ -572,6 +879,9 @@ export default function FormScreen({ route, navigation }) {
       if (!payload.category) return 'Select a category.';
       if (!Number.isFinite(payload.amount) || payload.amount <= 0) return 'Enter a valid amount.';
       if (!payload.date) return 'Date is required.';
+      if (payload.isRecurring && (!Number.isInteger(payload.recurringMonth) || payload.recurringMonth < 1 || payload.recurringMonth > 12)) {
+        return 'Recurring month must be between 1 and 12.';
+      }
     }
     if (formKey === 'reimbursements') {
       if (!payload.employeeName) return 'Employee name is required.';
@@ -596,6 +906,12 @@ export default function FormScreen({ route, navigation }) {
       if (!payload.productDescription) return 'Product description is required.';
       if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) return 'Quantity must be greater than 0.';
       if (!payload.expectedDeliveryDate) return 'Expected delivery date is required.';
+    }
+    if (formKey === 'jobs') {
+      if (!payload.materialId) return 'Select a fabric material.';
+      if (!Number.isFinite(payload.issuedFabricQuantity) || payload.issuedFabricQuantity <= 0) {
+        return 'Issued fabric quantity must be greater than 0.';
+      }
     }
     if (formKey === 'suppliers') {
       if (!payload.name) return 'Supplier name is required.';
@@ -641,6 +957,18 @@ export default function FormScreen({ route, navigation }) {
       if (!payload.issuedTo) return 'Issued to is required.';
       if (!payload.issuedBy) return 'Issued by is required.';
       if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) return 'Quantity must be greater than 0.';
+    }
+    if (isSalesForm) {
+      if (!payload.customer?.name) return 'Customer name is required.';
+      if (payload.customer?.email && !emailPattern.test(payload.customer.email)) return 'Enter a valid customer email.';
+      if (['invoices', 'delivery', 'returns'].includes(formKey) && !payload.salesOrder) return 'Select a sales order.';
+      if (formKey !== 'delivery') {
+        const item = payload.items?.[0];
+        if (!item?.description) return 'Item description is required.';
+        if (!Number.isFinite(item?.qty) || item.qty <= 0) return 'Quantity must be greater than 0.';
+        if (!Number.isFinite(item?.unitPrice) || item.unitPrice < 0) return 'Unit price cannot be negative.';
+      }
+      if (formKey === 'quotations' && !payload.validUntil) return 'Valid until date is required.';
     }
     return '';
   };
@@ -725,6 +1053,9 @@ export default function FormScreen({ route, navigation }) {
           <TextField label="Receipt URL" value={expenseForm.receiptUrl} onChangeText={(v) => updateExpense('receiptUrl', v)} />
           <TextField label="Approved by" value={expenseForm.approvedBy} onChangeText={(v) => updateExpense('approvedBy', v)} />
           <ChoiceGroup label="Status" value={expenseForm.status} options={expenseStatuses} onChange={(v) => updateExpense('status', v)} />
+          {expenseForm.isRecurring && (
+            <TextField label="Recurring Month (1-12)" value={expenseForm.recurringMonth} onChangeText={(v) => updateExpense('recurringMonth', v)} keyboardType="numeric" />
+          )}
         </>
       );
     }
@@ -873,6 +1204,107 @@ export default function FormScreen({ route, navigation }) {
     </View>
   );
 
+  const renderManufacturingMaterialChoices = () => (
+    <View style={styles.fieldBlock}>
+      <Text style={styles.label}>Fabric Material</Text>
+      {manufacturingMaterialsLoading ? <LoadingState message="Loading fabric materials..." /> : null}
+      {!manufacturingMaterialsLoading && manufacturingMaterials.length > 0 && (
+        <View style={styles.choices}>
+          {manufacturingMaterials.map((material) => {
+            const active = jobForm.materialId === material._id;
+            return (
+              <Pressable
+                key={material._id}
+                onPress={() => updateJob('materialId', material._id)}
+                style={({ pressed }) => [styles.choice, active && styles.choiceActive, pressed && styles.pressed]}
+              >
+                <Text style={[styles.choiceText, active && styles.choiceTextActive]}>
+                  {material.name || material.materialCode || 'Fabric'} ({material.stockQty ?? 0} {material.unit || material.uom || ''})
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      {!manufacturingMaterialsLoading && manufacturingMaterials.length === 0 && (
+        <Text style={styles.helpText}>No fabric materials found. Add fabric stock before creating a job.</Text>
+      )}
+    </View>
+  );
+
+  const renderSalesOrderChoices = () => (
+    <View style={styles.fieldBlock}>
+      <Text style={styles.label}>Sales Order</Text>
+      {salesMetaLoading ? <LoadingState message="Loading sales orders..." /> : null}
+      {!salesMetaLoading && salesOrders.length > 0 && (
+        <View style={styles.choices}>
+          {salesOrders.map((order) => {
+            const active = salesForm.salesOrder === order._id;
+            return (
+              <Pressable
+                key={order._id}
+                onPress={() => {
+                  updateSales('salesOrder', order._id);
+                  updateSales('customerName', order.customer?.name || '');
+                  updateSales('customerEmail', order.customer?.email || '');
+                  updateSales('customerPhone', order.customer?.phone || '');
+                  updateSales('customerAddress', order.customer?.address || '');
+                }}
+                style={({ pressed }) => [styles.choice, active && styles.choiceActive, pressed && styles.pressed]}
+              >
+                <Text style={[styles.choiceText, active && styles.choiceTextActive]}>{order.orderNumber || order.customer?.name || order._id}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      {!salesMetaLoading && salesOrders.length === 0 && <Text style={styles.helpText}>No sales orders found.</Text>}
+    </View>
+  );
+
+  const renderSalesForm = () => {
+    if (!isSalesForm) return null;
+    const statusOptions = formKey === 'quotations'
+      ? quoteStatuses
+      : formKey === 'sales-orders'
+        ? salesOrderStatuses
+        : formKey === 'delivery'
+          ? deliveryStatuses
+          : formKey === 'returns'
+            ? returnStatuses
+            : [];
+
+    return (
+      <>
+        <Text style={styles.formTitle}>{route.params?.title || 'Sales Record'}</Text>
+        {needsSalesOrders ? renderSalesOrderChoices() : null}
+        <TextField label="Customer Name" value={salesForm.customerName} onChangeText={(v) => updateSales('customerName', v)} />
+        <TextField label="Customer Email" value={salesForm.customerEmail} onChangeText={(v) => updateSales('customerEmail', v)} keyboardType="email-address" />
+        <TextField label="Customer Phone" value={salesForm.customerPhone} onChangeText={(v) => updateSales('customerPhone', v)} keyboardType="phone-pad" />
+        {formKey !== 'returns' && <TextField label="Customer Address" value={salesForm.customerAddress} onChangeText={(v) => updateSales('customerAddress', v)} multiline />}
+        {formKey !== 'delivery' && (
+          <>
+            <TextField label="Item Description" value={salesForm.itemDescription} onChangeText={(v) => updateSales('itemDescription', v)} />
+            <TextField label="Quantity" value={salesForm.qty} onChangeText={(v) => updateSales('qty', v)} keyboardType="numeric" />
+            <TextField label="Unit Price" value={salesForm.unitPrice} onChangeText={(v) => updateSales('unitPrice', v)} keyboardType="numeric" />
+          </>
+        )}
+        {formKey === 'sales-orders' && <TextField label="Cost Price" value={salesForm.costPrice} onChangeText={(v) => updateSales('costPrice', v)} keyboardType="numeric" />}
+        {['quotations', 'sales-orders', 'invoices'].includes(formKey) && <TextField label="Tax Rate %" value={salesForm.taxRate} onChangeText={(v) => updateSales('taxRate', v)} keyboardType="numeric" />}
+        {formKey === 'quotations' && <TextField label="Valid Until (YYYY-MM-DD)" value={salesForm.validUntil} onChangeText={(v) => updateSales('validUntil', v)} />}
+        {formKey === 'sales-orders' && <TextField label="Delivery Date (YYYY-MM-DD)" value={salesForm.deliveryDate} onChangeText={(v) => updateSales('deliveryDate', v)} />}
+        {formKey === 'invoices' && <ChoiceGroup label="Invoice Type" value={salesForm.invoiceType} options={invoiceTypes} onChange={(v) => updateSales('invoiceType', v)} />}
+        {formKey === 'invoices' && <TextField label="Due Date (YYYY-MM-DD)" value={salesForm.dueDate} onChangeText={(v) => updateSales('dueDate', v)} />}
+        {formKey === 'delivery' && <TextField label="Driver" value={salesForm.driver} onChangeText={(v) => updateSales('driver', v)} />}
+        {formKey === 'delivery' && <TextField label="Vehicle" value={salesForm.vehicle} onChangeText={(v) => updateSales('vehicle', v)} />}
+        {formKey === 'returns' && <ChoiceGroup label="Refund Type" value={salesForm.refundType} options={refundTypes} onChange={(v) => updateSales('refundType', v)} />}
+        {formKey === 'returns' && <ChoiceGroup label="Condition" value={salesForm.condition} options={returnConditions} onChange={(v) => updateSales('condition', v)} />}
+        {!!statusOptions.length && <ChoiceGroup label="Status" value={salesForm.status} options={statusOptions} onChange={(v) => updateSales('status', v)} />}
+        <TextField label={formKey === 'returns' ? 'Reason / Notes' : 'Notes'} value={salesForm.notes} onChangeText={(v) => updateSales('notes', v)} multiline />
+      </>
+    );
+  };
+
   const renderOrderAndPurchaseForm = () => {
     if (formKey === 'all-orders') {
       return (
@@ -884,6 +1316,20 @@ export default function FormScreen({ route, navigation }) {
           <TextField label="Quantity" value={orderForm.quantity} onChangeText={(v) => updateOrder('quantity', v)} keyboardType="numeric" />
           <TextField label="Expected Delivery Date (YYYY-MM-DD)" value={orderForm.expectedDeliveryDate} onChangeText={(v) => updateOrder('expectedDeliveryDate', v)} />
           <TextField label="Notes" value={orderForm.notes} onChangeText={(v) => updateOrder('notes', v)} multiline />
+        </>
+      );
+    }
+
+    if (formKey === 'jobs') {
+      return (
+        <>
+          <Text style={styles.formTitle}>Manufacturing Job</Text>
+          <Text style={styles.helpText}>Create a job by issuing fabric to production. Job number and workflow status are generated automatically.</Text>
+          {renderManufacturingMaterialChoices()}
+          <TextField label="Issued Fabric Quantity" value={jobForm.issuedFabricQuantity} onChangeText={(v) => updateJob('issuedFabricQuantity', v)} keyboardType="numeric" />
+          <TextField label="Style Reference" value={jobForm.styleRef} onChangeText={(v) => updateJob('styleRef', v)} placeholder="STYLE-001" />
+          <TextField label="Batch Reference" value={jobForm.batchRef} onChangeText={(v) => updateJob('batchRef', v)} placeholder="BATCH-001" />
+          <TextField label="Accessories / Notes" value={jobForm.accessories} onChangeText={(v) => updateJob('accessories', v)} multiline placeholder="Optional accessories or remarks" />
         </>
       );
     }
@@ -1007,10 +1453,11 @@ export default function FormScreen({ route, navigation }) {
   };
 
   const customOrderOrPurchaseForm = renderOrderAndPurchaseForm();
+  const customSalesForm = renderSalesForm();
 
   return (
     <ScreenScaffold title={`${isEditing ? 'Edit' : 'Add'} ${route.params?.title || 'Record'}`} subtitle="Fill the form. The app converts it to the API payload automatically.">
-      <Card style={styles.formCard}>{customOrderOrPurchaseForm || (formKey === 'employees' ? renderEmployeeForm() : renderExpenseForm())}</Card>
+      <Card style={styles.formCard}>{customSalesForm || customOrderOrPurchaseForm || (formKey === 'employees' ? renderEmployeeForm() : renderExpenseForm())}</Card>
       <Button title={formKey === 'employees' ? (isEditing ? 'Save employee' : 'Create employee') : (isEditing ? 'Save record' : 'Create record')} loading={loading} onPress={submit} />
     </ScreenScaffold>
   );
@@ -1027,6 +1474,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontWeight: '800',
+  },
+  formTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '900',
   },
   choices: {
     flexDirection: 'row',
