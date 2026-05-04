@@ -1380,9 +1380,84 @@ export default function ResourceScreen({ route, navigation }) {
     </View>
   );
 
+  const renderProductRows = () => {
+    if (!records.length) return <EmptyState />;
+
+    return (
+      <View style={styles.list}>
+        {records.map((record, index) => {
+          const id = getId(record);
+          const qty = pickValue(record, ['stockQty', 'quantity', 'currentStock']) ?? 0;
+          const level = stockLevel(qty);
+          
+          return (
+            <Card key={`${id}-${index}`} style={styles.productCard}>
+              <View style={styles.productHeader}>
+                <View style={styles.productTitleBlock}>
+                  <Text style={styles.productName} numberOfLines={1}>{recordTitle(record, 'Product')}</Text>
+                  <Text style={styles.productSku}>{record?.sku || 'No SKU'}</Text>
+                </View>
+                {renderStatusBadge(level.label, styles[`moduleBadge_${level.tone}`])}
+              </View>
+
+              <View style={styles.productDetailGrid}>
+                <View style={styles.productDetailItem}>
+                  <Text style={styles.metaLabel}>Classification</Text>
+                  <Text style={styles.metaValue}>{record?.classification || '-'}</Text>
+                </View>
+                <View style={styles.productDetailItem}>
+                  <Text style={styles.metaLabel}>Category</Text>
+                  <Text style={styles.metaValue}>{record?.category?.name || record?.category || '-'}</Text>
+                </View>
+                <View style={styles.productDetailItem}>
+                  <Text style={styles.metaLabel}>Current Stock</Text>
+                  <Text style={[styles.metaValue, { color: level.tone === 'danger' ? colors.danger : colors.text }]}>
+                    {qty} {record?.uom || record?.unit || 'units'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.productActionRow}>
+                <Pressable 
+                  onPress={() => openRecordDetail(record)} 
+                  style={({ pressed }) => [styles.actionBtn, styles.viewBtn, pressed && styles.pressed]}
+                >
+                  <MaterialCommunityIcons name="eye-outline" size={18} color={colors.primary} />
+                  <Text style={styles.viewBtnText}>View</Text>
+                </Pressable>
+                
+                {!!item?.updater && (
+                  <Pressable 
+                    onPress={() => openRecordEdit(record)} 
+                    style={({ pressed }) => [styles.actionBtn, styles.editBtn, pressed && styles.pressed]}
+                  >
+                    <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
+                    <Text style={styles.editBtnText}>Edit</Text>
+                  </Pressable>
+                )}
+                
+                {!!item?.remover && (
+                  <Pressable 
+                    disabled={updatingId === record._id} 
+                    onPress={() => deleteRecord(record)} 
+                    style={({ pressed }) => [styles.actionBtn, styles.deleteBtn, pressed && styles.pressed]}
+                  >
+                    <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+                    <Text style={styles.deleteBtnText}>Delete</Text>
+                  </Pressable>
+                )}
+              </View>
+            </Card>
+          );
+        })}
+      </View>
+    );
+  };
+
   const renderStockRows = () => {
     if (itemKey === 'inventory') return renderStockDashboard();
     if (itemKey === 'barcode') return renderBarcodeScanner();
+    if (itemKey === 'products') return renderProductRows();
     return renderStructuredRows();
   };
 
@@ -2815,6 +2890,84 @@ const styles = StyleSheet.create({
   gridCard: {
     width: '48%',
     minHeight: 190,
+  },
+  productCard: {
+    gap: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  productHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  productTitleBlock: {
+    flex: 1,
+    gap: 4,
+  },
+  productName: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  productSku: {
+    fontSize: 13,
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  productDetailGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    backgroundColor: colors.surfaceMuted,
+    padding: 12,
+    borderRadius: 8,
+  },
+  productDetailItem: {
+    width: '45%',
+    gap: 4,
+  },
+  productActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  viewBtn: {
+    borderColor: colors.primary + '30',
+  },
+  editBtn: {
+    borderColor: colors.primary + '30',
+  },
+  deleteBtn: {
+    borderColor: colors.danger + '30',
+  },
+  viewBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  editBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  deleteBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.danger,
   },
   moduleBadge: {
     borderRadius: 999,

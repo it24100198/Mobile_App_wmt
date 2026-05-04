@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Dermas Apparel",
+    "slug": "DermasApparel",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -28,8 +28,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "8b335687-9c70-40f4-9f94-6668c1c7a553"
+        "projectId": "39b9e123-4011-4825-83f9-d1e586d59149"
       }
-    }
+    },
+    "owner": "pavin20"
   }
 }
