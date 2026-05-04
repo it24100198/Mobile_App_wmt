@@ -12,7 +12,7 @@ import { findModuleItem } from '../../navigation/modules';
 import { colors } from '../../theme/colors';
 import { getId, metricEntries, money, subtitleFor, titleFor, toArray } from '../../utils/dataShape';
 import { ROLE_LABELS, ROLES } from '../../utils/roles';
-import { approveRegistrationRequest, completeWashingTransfer, receiveWashingTransfer, rejectRegistrationRequest, updateAccountSettingsPassword, updateAccountSettingsPreferences, updateAccountSettingsProfile } from '../../api/client';
+import { approveRegistrationRequest, completeWashingTransfer, getEmployees, getHourlyRecords, getJob, receiveWashingTransfer, rejectRegistrationRequest, saveHourlyProduction, updateAccountSettingsPassword, updateAccountSettingsPreferences, updateAccountSettingsProfile } from '../../api/client';
 import { expensesApi, salesApi, stockApi } from '../../api/erp';
 import { useAuth } from '../../context/AuthContext';
 
@@ -110,6 +110,15 @@ const manufacturingOrder = {
 const manufacturingLabel = (status) => {
   if (status === 'SENT_TO_CUTTING') return 'Sent To Cutting';
   return manufacturingSteps.find((step) => step.key === status)?.label || statusLabel(status || 'pending');
+};
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const productionHours = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+const formatHour = (hour) => {
+  const value = Number(hour);
+  if (value === 0) return '12 AM';
+  if (value < 12) return `${value} AM`;
+  if (value === 12) return '12 PM';
+  return `${value - 12} PM`;
 };
 
 export default function ResourceScreen({ route, navigation }) {
@@ -1033,6 +1042,10 @@ export default function ResourceScreen({ route, navigation }) {
   };
 
   const renderManufacturingRows = () => {
+    if (itemKey === 'hourly') {
+      navigation.replace('HourlyProduction');
+      return <LoadingState />;
+    }
     if (['overview', 'supervisor'].includes(itemKey)) return renderManufacturingDashboard();
     const list = manufacturingRecords();
     if (!list.length) return <EmptyState />;

@@ -330,14 +330,26 @@ export default function DetailScreen({ route, navigation }) {
       return;
     }
     if (action === 'hourly_board') {
-      navigation.navigate('Resource', { moduleKey: 'manufacturing', itemKey: 'hourly', title: 'Hourly Production' });
+      navigation.navigate('HourlyProduction', { jobId: record?._id });
       return;
     }
     if (action === 'complete_line') {
-      Alert.alert('Complete Line', 'Mark line production as completed?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Complete', onPress: () => runManufacturingAction('complete_line') },
-      ]);
+      // Verify hourly records have employee data
+      (async () => {
+        try {
+          const recRes = await getHourlyRecords(record?._id);
+          const recs = Array.isArray(recRes?.data) ? recRes.data : recRes?.data?.data || [];
+          const hasEmp = recs.some(r => r.employeeId);
+          if (!hasEmp) {
+            Alert.alert('Missing Production Data', 'Record hourly production with an operator before completing the line.');
+            return;
+          }
+          // proceed with completion
+          runManufacturingAction('complete_line');
+        } catch (e) {
+          Alert.alert('Error', e.message || 'Failed to verify hourly records.');
+        }
+      })();
       return;
     }
     if (action === 'washing_board') {
@@ -353,360 +365,360 @@ export default function DetailScreen({ route, navigation }) {
     }
   };
 
-  const runManufacturingAction = async (action) => {
-    if (!record?._id) return;
-    setSavingStatus(true);
-    try {
-      if (action === 'send_to_cutting') {
-        await sendJobToCutting(record._id);
-        await reloadManufacturingJob();
-        Alert.alert('Updated', 'Job moved to cutting.');
-      } else if (action === 'complete_line') {
-        await completeLine(record._id);
-        await reloadManufacturingJob();
-        Alert.alert('Updated', 'Line completed successfully.');
-      } else {
-        Alert.alert('Action ready', 'This action needs the related production form data before it can be submitted.');
-      }
-    } catch (err) {
-      Alert.alert('Action failed', err.response?.data?.error || err.response?.data?.message || err.message || 'Could not update this job.');
-    } finally {
-      setSavingStatus(false);
+const runManufacturingAction = async (action) => {
+  if (!record?._id) return;
+  setSavingStatus(true);
+  try {
+    if (action === 'send_to_cutting') {
+      await sendJobToCutting(record._id);
+      await reloadManufacturingJob();
+      Alert.alert('Updated', 'Job moved to cutting.');
+    } else if (action === 'complete_line') {
+      await completeLine(record._id);
+      await reloadManufacturingJob();
+      Alert.alert('Updated', 'Line completed successfully.');
+    } else {
+      Alert.alert('Action ready', 'This action needs the related production form data before it can be submitted.');
     }
-  };
-
-  if (isOrderDetail) {
-    const currentIndex = orderStages.findIndex((stage) => stage.key === record?.status);
-    const progress = clampProgress(record?.completionPercentage || orderStages[Math.max(currentIndex, 0)]?.progress);
-    const history = Array.isArray(record?.statusHistory) ? record.statusHistory.slice().reverse() : [];
-    const nextStageOptions = currentIndex >= 0 ? orderStages.slice(currentIndex + 1) : orderStages;
-
-    return (
-      <ScreenScaffold title={route.params?.title || record?.orderNumber || 'Order Details'} subtitle="Order lifecycle, status, activity, and delivery details.">
-        <Card style={styles.hero}>
-          <View style={styles.heroTop}>
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.title}>{record?.orderNumber || 'Order'}</Text>
-              <Text style={styles.subtitle}>{record?.customerName || '-'}</Text>
-            </View>
-            <StatusPill value={record?.status || 'confirmed'} />
-          </View>
-          <View style={styles.progressBlock}>
-            <View style={styles.progressHeader}>
-              <Text style={styles.label}>Completion Progress</Text>
-              <Text style={styles.progressText}>{progress}%</Text>
-            </View>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress}%` }]} />
-            </View>
-          </View>
-        </Card>
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Order Summary</Text>
-          <View style={styles.summaryGrid}>
-            <SummaryItem label="Order ID" value={record?.orderNumber || record?._id || '-'} />
-            <SummaryItem label="Customer" value={record?.customerName || '-'} />
-            <SummaryItem label="Quantity" value={record?.quantity || 0} />
-            <SummaryItem label="Confirmed Date" value={formatDate(record?.confirmedDate || record?.createdAt)} />
-            <SummaryItem label="Expected Delivery" value={formatDate(record?.expectedDeliveryDate)} />
-            <SummaryItem label="Status" value={orderStatusLabel(record?.status)} />
-          </View>
-          {!!record?.productDescription && (
-            <View style={styles.descriptionBox}>
-              <Text style={styles.label}>Product</Text>
-              <Text style={styles.value}>{record.productDescription}</Text>
-            </View>
-          )}
-          <Button title="Update Status" disabled={nextStageOptions.length === 0} onPress={openStatusModal} style={styles.updateButton} />
-        </Card>
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Order Lifecycle</Text>
-          <View style={styles.stepper}>
-            {orderStages.map((stage, index) => {
-              const done = index <= currentIndex;
-              const active = stage.key === record?.status;
-              return (
-                <View key={stage.key} style={styles.stepRow}>
-                  <View style={styles.stepMarkerWrap}>
-                    <View style={[styles.stepMarker, done && styles.stepMarkerDone, active && styles.stepMarkerActive]}>
-                      {done ? <MaterialCommunityIcons name="check" size={13} color="#fff" /> : null}
-                    </View>
-                    {index < orderStages.length - 1 ? <View style={[styles.stepLine, done && styles.stepLineDone]} /> : null}
-                  </View>
-                  <View style={styles.stepContent}>
-                    <Text style={[styles.stepTitle, done && styles.stepTitleDone]}>{stage.label}</Text>
-                    <Text style={styles.stepMeta}>{stage.progress}% complete</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </Card>
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Activity Log</Text>
-          {history.length ? history.map((entry, index) => (
-            <View key={`${entry?.timestamp || index}-${entry?.status}`} style={styles.activityRow}>
-              <View style={styles.activityDot} />
-              <View style={styles.activityContent}>
-                <Text style={styles.activityStatus}>{orderStatusLabel(entry?.status)}</Text>
-                {!!entry?.note && <Text style={styles.activityNote}>{entry.note}</Text>}
-                <Text style={styles.activityDate}>{formatDateTime(entry?.timestamp)}</Text>
-              </View>
-            </View>
-          )) : (
-            <Text style={styles.emptyText}>No activity log found.</Text>
-          )}
-        </Card>
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Notes</Text>
-          <Text style={record?.notes ? styles.value : styles.emptyText}>{record?.notes || 'No additional notes.'}</Text>
-        </Card>
-
-        <Modal visible={statusModalOpen} transparent animationType="slide" onRequestClose={closeStatusModal}>
-          <View style={styles.modalOverlay}>
-            <Pressable style={styles.modalBackdrop} onPress={closeStatusModal} />
-            <View style={styles.bottomSheet}>
-              <View style={styles.sheetHandle} />
-              <Text style={styles.modalTitle}>Update Status</Text>
-              <Text style={styles.modalSubtitle}>Select the next stage for {record?.orderNumber || 'this order'}.</Text>
-              <View style={styles.statusGrid}>
-                {nextStageOptions.length ? nextStageOptions.map((stage) => {
-                  const selected = selectedStatus === stage.key;
-                  return (
-                    <Pressable
-                      key={stage.key}
-                      onPress={() => setSelectedStatus(stage.key)}
-                      style={({ pressed }) => [styles.statusOption, selected && styles.statusOptionSelected, pressed && styles.pressed]}
-                    >
-                      <Text style={[styles.statusOptionText, selected && styles.statusOptionTextSelected]}>{stage.label}</Text>
-                    </Pressable>
-                  );
-                }) : <Text style={styles.emptyText}>This order is already delivered.</Text>}
-              </View>
-              <TextInput
-                value={statusNote}
-                onChangeText={setStatusNote}
-                placeholder="Note (optional)"
-                placeholderTextColor={colors.muted}
-                multiline
-                textAlignVertical="top"
-                style={styles.noteInput}
-              />
-              <Button title="Save Status" loading={savingStatus} disabled={!selectedStatus || savingStatus} onPress={confirmStatusUpdate} />
-              <Button title="Cancel" variant="secondary" disabled={savingStatus} onPress={closeStatusModal} />
-            </View>
-          </View>
-        </Modal>
-      </ScreenScaffold>
-    );
+  } catch (err) {
+    Alert.alert('Action failed', err.response?.data?.error || err.response?.data?.message || err.message || 'Could not update this job.');
+  } finally {
+    setSavingStatus(false);
   }
+};
 
-  if (isManufacturingDetail) {
-    const currentProgress = manufacturingOrder[record?.status] ?? 0;
-    const percent = Math.round((Math.min(currentProgress, manufacturingSteps.length - 1) / (manufacturingSteps.length - 1)) * 100);
-    const role = user?.role || 'employee';
-    const isSupervisor = ['admin', 'manager', 'supervisor'].includes(role);
-    const isWorker = ['operator', 'employee'].includes(role);
-    const isQc = isSupervisor || String(role).includes('qc');
-    const nextAction = nextActionForJob(record?.status);
-
-    return (
-      <ScreenScaffold title={route.params?.title || record?.jobNumber || 'Job Detail'} subtitle="Manufacturing workflow timeline and role-based actions.">
-        <Card style={styles.hero}>
-          <View style={styles.heroTop}>
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.title}>{record?.jobNumber || titleFor(record)}</Text>
-              <Text style={styles.subtitle}>{record?.productId?.name || record?.styleRef || record?.batchRef || 'Manufacturing job'}</Text>
-            </View>
-            <StatusPill value={manufacturingLabel(record?.status)} />
-          </View>
-          <View style={styles.progressBlock}>
-            <View style={styles.progressHeader}>
-              <Text style={styles.label}>Workflow Progress</Text>
-              <Text style={styles.progressText}>{percent}%</Text>
-            </View>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${percent}%` }]} />
-            </View>
-          </View>
-        </Card>
-
-        <Card style={[styles.section, styles.nextActionCard]}>
-          <View style={styles.heroTop}>
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.sectionTitle}>Next Step Actions</Text>
-              <Text style={styles.nextActionTitle}>{nextAction.title}</Text>
-              <Text style={styles.subtitle}>{nextAction.subtitle}</Text>
-            </View>
-            <View style={styles.nextActionIcon}>
-              <MaterialCommunityIcons name={nextAction.icon} size={24} color="#fff" />
-            </View>
-          </View>
-          {!!nextAction.action && (
-            <Button title={nextAction.title} loading={savingStatus} onPress={() => runNextStepAction(nextAction.action)} style={styles.updateButton} />
-          )}
-          {['WASHING_OUT', 'AFTER_WASH_RECEIVED', 'PACKING_COMPLETED'].includes(record?.status) && (
-            <Button
-              title={record.status === 'WASHING_OUT' ? 'Open Washing Board' : record.status === 'AFTER_WASH_RECEIVED' ? 'Open QC Board' : 'Open Final Checking'}
-              variant="secondary"
-              onPress={() => runNextStepAction(record.status === 'WASHING_OUT' ? 'washing_board' : record.status === 'AFTER_WASH_RECEIVED' ? 'qc_board' : 'final_board')}
-            />
-          )}
-        </Card>
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Job Summary</Text>
-          <View style={styles.summaryGrid}>
-            <SummaryItem label="Job Number" value={record?.jobNumber || '-'} />
-            <SummaryItem label="Style / Batch" value={record?.styleRef || record?.batchRef || '-'} />
-            <SummaryItem label="Issued Fabric" value={record?.issuedFabricQuantity ?? '-'} />
-            <SummaryItem label="Cut Pieces" value={record?.totalCutPieces ?? '-'} />
-            <SummaryItem label="Current Step" value={manufacturingLabel(record?.status)} />
-            <SummaryItem label="Issue Date" value={formatDate(record?.issueDate || record?.createdAt)} />
-          </View>
-        </Card>
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Workflow Timeline</Text>
-          <View style={styles.stepper}>
-            {manufacturingSteps.map((step, index) => {
-              const done = index < currentProgress || record?.status === 'WAREHOUSE_RECEIVED';
-              const active = Math.floor(currentProgress) === index && record?.status !== 'WAREHOUSE_RECEIVED';
-              return (
-                <View key={step.key} style={styles.stepRow}>
-                  <View style={styles.stepMarkerWrap}>
-                    <View style={[styles.stepMarker, done && styles.stepMarkerDone, active && styles.stepMarkerActive]}>
-                      <MaterialCommunityIcons name={done ? 'check' : active ? 'sync' : 'clock-outline'} size={13} color={done || active ? '#fff' : colors.muted} />
-                    </View>
-                    {index < manufacturingSteps.length - 1 ? <View style={[styles.stepLine, (done || active) && styles.stepLineDone]} /> : null}
-                  </View>
-                  <View style={styles.stepContent}>
-                    <Text style={[styles.stepTitle, (done || active) && styles.stepTitleDone]}>{step.label}</Text>
-                    <Text style={styles.stepMeta}>{active ? 'Current step' : done ? 'Completed' : 'Pending'}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </Card>
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Action Buttons</Text>
-          {isSupervisor && (
-            <View style={styles.actionGrid}>
-              <Button title="Assign Line" variant="secondary" onPress={() => runManufacturingAction('assign_line')} style={styles.actionButton} />
-              <Button title="Update Status" onPress={() => runManufacturingAction(record?.status === 'FABRIC_ISSUED' ? 'send_to_cutting' : 'update_status')} loading={savingStatus} style={styles.actionButton} />
-              <Button title="Approve QC" variant="secondary" onPress={() => runManufacturingAction('approve_qc')} style={styles.actionButton} />
-            </View>
-          )}
-          {isWorker && (
-            <View style={styles.actionGrid}>
-              <Button title="Start Work" variant="secondary" onPress={() => runManufacturingAction('start_work')} style={styles.actionButton} />
-              <Button title="Complete Step" onPress={() => runManufacturingAction('complete_line')} loading={savingStatus} style={styles.actionButton} />
-            </View>
-          )}
-          {isQc && (
-            <View style={styles.actionGrid}>
-              <Button title="Pass" variant="secondary" onPress={() => runManufacturingAction('qc_pass')} style={styles.actionButton} />
-              <Button title="Fail" variant="danger" onPress={() => runManufacturingAction('qc_fail')} style={styles.actionButton} />
-              <Button title="Add Remarks" variant="secondary" onPress={() => runManufacturingAction('qc_remarks')} style={styles.actionButton} />
-            </View>
-          )}
-        </Card>
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Production Notes</Text>
-          <View style={styles.summaryGrid}>
-            <SummaryItem label="Fabric Used" value={record?.fabricUsedQty ?? '-'} />
-            <SummaryItem label="Fabric Waste" value={record?.fabricWasteQty ?? '-'} />
-            <SummaryItem label="Cutting Rejects" value={record?.cuttingRejectQty ?? '-'} />
-            <SummaryItem label="Updated" value={formatDateTime(record?.updatedAt || record?.createdAt)} />
-          </View>
-        </Card>
-
-        <Modal visible={!!manufacturingModal} transparent animationType="slide" onRequestClose={closeManufacturingModal}>
-          <View style={styles.modalOverlay}>
-            <Pressable style={styles.modalBackdrop} onPress={closeManufacturingModal} />
-            <View style={styles.bottomSheet}>
-              <View style={styles.sheetHandle} />
-              <Text style={styles.modalTitle}>
-                {manufacturingModal === 'cutting_form' ? 'Enter Cutting Results' : manufacturingModal === 'assign_line_form' ? 'Assign to Line' : 'Send to Washing'}
-              </Text>
-              <Text style={styles.modalSubtitle}>{record?.jobNumber || 'Job'} - {manufacturingLabel(record?.status)}</Text>
-
-              {manufacturingModal === 'cutting_form' && (
-                <>
-                  <TextInput value={manufacturingForm.fabricUsedQty} onChangeText={(v) => updateManufacturingForm('fabricUsedQty', v)} placeholder="Fabric used quantity" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
-                  <TextInput value={manufacturingForm.fabricWasteQty} onChangeText={(v) => updateManufacturingForm('fabricWasteQty', v)} placeholder="Fabric waste quantity" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
-                  <TextInput value={manufacturingForm.totalCutPieces} onChangeText={(v) => updateManufacturingForm('totalCutPieces', v)} placeholder="Total cut pieces" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
-                  <TextInput value={manufacturingForm.cuttingRejectQty} onChangeText={(v) => updateManufacturingForm('cuttingRejectQty', v)} placeholder="Cutting reject quantity" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
-                  <Button title="Save Cutting Results" loading={savingStatus} onPress={submitCuttingResults} />
-                </>
-              )}
-
-              {manufacturingModal === 'assign_line_form' && (
-                <>
-                  <Text style={styles.label}>Product</Text>
-                  <View style={styles.statusGrid}>
-                    {manufacturingMeta.products.map((product) => (
-                      <Pressable key={product._id} onPress={() => updateManufacturingForm('productId', product._id)} style={({ pressed }) => [styles.statusOption, manufacturingForm.productId === product._id && styles.statusOptionSelected, pressed && styles.pressed]}>
-                        <Text style={[styles.statusOptionText, manufacturingForm.productId === product._id && styles.statusOptionTextSelected]}>{product.name || product.sku}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.label}>Line</Text>
-                  <View style={styles.statusGrid}>
-                    {manufacturingMeta.lines.map((line) => {
-                      const lineName = line.name || line.slug;
-                      return (
-                        <Pressable key={line._id || lineName} onPress={() => updateManufacturingForm('lineName', lineName)} style={({ pressed }) => [styles.statusOption, manufacturingForm.lineName === lineName && styles.statusOptionSelected, pressed && styles.pressed]}>
-                          <Text style={[styles.statusOptionText, manufacturingForm.lineName === lineName && styles.statusOptionTextSelected]}>{lineName}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <TextInput value={manufacturingForm.assignedQuantity} onChangeText={(v) => updateManufacturingForm('assignedQuantity', v)} placeholder="Assigned quantity" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
-                  <TextInput value={manufacturingForm.dispatchDate} onChangeText={(v) => updateManufacturingForm('dispatchDate', v)} placeholder="Dispatch date YYYY-MM-DD" placeholderTextColor={colors.muted} style={styles.noteInputSingle} />
-                  <Button title="Assign Line" loading={savingStatus} onPress={submitLineAssignment} />
-                </>
-              )}
-
-              {manufacturingModal === 'washing_form' && (
-                <>
-                  <TextInput value={manufacturingForm.quantitySent} onChangeText={(v) => updateManufacturingForm('quantitySent', v)} placeholder="Quantity sent to washing" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
-                  <TextInput value={manufacturingForm.sentFrom} onChangeText={(v) => updateManufacturingForm('sentFrom', v)} placeholder="Sent from line/section" placeholderTextColor={colors.muted} style={styles.noteInputSingle} />
-                  <Button title="Create Washing Gate Pass" loading={savingStatus} onPress={submitWashingTransfer} />
-                </>
-              )}
-
-              <Button title="Cancel" variant="secondary" disabled={savingStatus} onPress={closeManufacturingModal} />
-            </View>
-          </View>
-        </Modal>
-      </ScreenScaffold>
-    );
-  }
+if (isOrderDetail) {
+  const currentIndex = orderStages.findIndex((stage) => stage.key === record?.status);
+  const progress = clampProgress(record?.completionPercentage || orderStages[Math.max(currentIndex, 0)]?.progress);
+  const history = Array.isArray(record?.statusHistory) ? record.statusHistory.slice().reverse() : [];
+  const nextStageOptions = currentIndex >= 0 ? orderStages.slice(currentIndex + 1) : orderStages;
 
   return (
-    <ScreenScaffold title={route.params?.title || titleFor(record)} subtitle="Record detail adapted for mobile review.">
+    <ScreenScaffold title={route.params?.title || record?.orderNumber || 'Order Details'} subtitle="Order lifecycle, status, activity, and delivery details.">
       <Card style={styles.hero}>
-        <Text style={styles.title}>{titleFor(record)}</Text>
-        <StatusPill value={record?.status || record?.state || record?.role} />
-      </Card>
-      <Card>
-        {detailEntries(record).map(([key, value]) => (
-          <View key={key} style={styles.field}>
-            <Text style={styles.label}>{readable(key)}</Text>
-            <Text style={styles.value}>{String(value)}</Text>
+        <View style={styles.heroTop}>
+          <View style={styles.heroTitleBlock}>
+            <Text style={styles.title}>{record?.orderNumber || 'Order'}</Text>
+            <Text style={styles.subtitle}>{record?.customerName || '-'}</Text>
           </View>
-        ))}
+          <StatusPill value={record?.status || 'confirmed'} />
+        </View>
+        <View style={styles.progressBlock}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.label}>Completion Progress</Text>
+            <Text style={styles.progressText}>{progress}%</Text>
+          </View>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progress}%` }]} />
+          </View>
+        </View>
       </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Order Summary</Text>
+        <View style={styles.summaryGrid}>
+          <SummaryItem label="Order ID" value={record?.orderNumber || record?._id || '-'} />
+          <SummaryItem label="Customer" value={record?.customerName || '-'} />
+          <SummaryItem label="Quantity" value={record?.quantity || 0} />
+          <SummaryItem label="Confirmed Date" value={formatDate(record?.confirmedDate || record?.createdAt)} />
+          <SummaryItem label="Expected Delivery" value={formatDate(record?.expectedDeliveryDate)} />
+          <SummaryItem label="Status" value={orderStatusLabel(record?.status)} />
+        </View>
+        {!!record?.productDescription && (
+          <View style={styles.descriptionBox}>
+            <Text style={styles.label}>Product</Text>
+            <Text style={styles.value}>{record.productDescription}</Text>
+          </View>
+        )}
+        <Button title="Update Status" disabled={nextStageOptions.length === 0} onPress={openStatusModal} style={styles.updateButton} />
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Order Lifecycle</Text>
+        <View style={styles.stepper}>
+          {orderStages.map((stage, index) => {
+            const done = index <= currentIndex;
+            const active = stage.key === record?.status;
+            return (
+              <View key={stage.key} style={styles.stepRow}>
+                <View style={styles.stepMarkerWrap}>
+                  <View style={[styles.stepMarker, done && styles.stepMarkerDone, active && styles.stepMarkerActive]}>
+                    {done ? <MaterialCommunityIcons name="check" size={13} color="#fff" /> : null}
+                  </View>
+                  {index < orderStages.length - 1 ? <View style={[styles.stepLine, done && styles.stepLineDone]} /> : null}
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={[styles.stepTitle, done && styles.stepTitleDone]}>{stage.label}</Text>
+                  <Text style={styles.stepMeta}>{stage.progress}% complete</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Activity Log</Text>
+        {history.length ? history.map((entry, index) => (
+          <View key={`${entry?.timestamp || index}-${entry?.status}`} style={styles.activityRow}>
+            <View style={styles.activityDot} />
+            <View style={styles.activityContent}>
+              <Text style={styles.activityStatus}>{orderStatusLabel(entry?.status)}</Text>
+              {!!entry?.note && <Text style={styles.activityNote}>{entry.note}</Text>}
+              <Text style={styles.activityDate}>{formatDateTime(entry?.timestamp)}</Text>
+            </View>
+          </View>
+        )) : (
+          <Text style={styles.emptyText}>No activity log found.</Text>
+        )}
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Notes</Text>
+        <Text style={record?.notes ? styles.value : styles.emptyText}>{record?.notes || 'No additional notes.'}</Text>
+      </Card>
+
+      <Modal visible={statusModalOpen} transparent animationType="slide" onRequestClose={closeStatusModal}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={closeStatusModal} />
+          <View style={styles.bottomSheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.modalTitle}>Update Status</Text>
+            <Text style={styles.modalSubtitle}>Select the next stage for {record?.orderNumber || 'this order'}.</Text>
+            <View style={styles.statusGrid}>
+              {nextStageOptions.length ? nextStageOptions.map((stage) => {
+                const selected = selectedStatus === stage.key;
+                return (
+                  <Pressable
+                    key={stage.key}
+                    onPress={() => setSelectedStatus(stage.key)}
+                    style={({ pressed }) => [styles.statusOption, selected && styles.statusOptionSelected, pressed && styles.pressed]}
+                  >
+                    <Text style={[styles.statusOptionText, selected && styles.statusOptionTextSelected]}>{stage.label}</Text>
+                  </Pressable>
+                );
+              }) : <Text style={styles.emptyText}>This order is already delivered.</Text>}
+            </View>
+            <TextInput
+              value={statusNote}
+              onChangeText={setStatusNote}
+              placeholder="Note (optional)"
+              placeholderTextColor={colors.muted}
+              multiline
+              textAlignVertical="top"
+              style={styles.noteInput}
+            />
+            <Button title="Save Status" loading={savingStatus} disabled={!selectedStatus || savingStatus} onPress={confirmStatusUpdate} />
+            <Button title="Cancel" variant="secondary" disabled={savingStatus} onPress={closeStatusModal} />
+          </View>
+        </View>
+      </Modal>
     </ScreenScaffold>
   );
+}
+
+if (isManufacturingDetail) {
+  const currentProgress = manufacturingOrder[record?.status] ?? 0;
+  const percent = Math.round((Math.min(currentProgress, manufacturingSteps.length - 1) / (manufacturingSteps.length - 1)) * 100);
+  const role = user?.role || 'employee';
+  const isSupervisor = ['admin', 'manager', 'supervisor'].includes(role);
+  const isWorker = ['operator', 'employee'].includes(role);
+  const isQc = isSupervisor || String(role).includes('qc');
+  const nextAction = nextActionForJob(record?.status);
+
+  return (
+    <ScreenScaffold title={route.params?.title || record?.jobNumber || 'Job Detail'} subtitle="Manufacturing workflow timeline and role-based actions.">
+      <Card style={styles.hero}>
+        <View style={styles.heroTop}>
+          <View style={styles.heroTitleBlock}>
+            <Text style={styles.title}>{record?.jobNumber || titleFor(record)}</Text>
+            <Text style={styles.subtitle}>{record?.productId?.name || record?.styleRef || record?.batchRef || 'Manufacturing job'}</Text>
+          </View>
+          <StatusPill value={manufacturingLabel(record?.status)} />
+        </View>
+        <View style={styles.progressBlock}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.label}>Workflow Progress</Text>
+            <Text style={styles.progressText}>{percent}%</Text>
+          </View>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${percent}%` }]} />
+          </View>
+        </View>
+      </Card>
+
+      <Card style={[styles.section, styles.nextActionCard]}>
+        <View style={styles.heroTop}>
+          <View style={styles.heroTitleBlock}>
+            <Text style={styles.sectionTitle}>Next Step Actions</Text>
+            <Text style={styles.nextActionTitle}>{nextAction.title}</Text>
+            <Text style={styles.subtitle}>{nextAction.subtitle}</Text>
+          </View>
+          <View style={styles.nextActionIcon}>
+            <MaterialCommunityIcons name={nextAction.icon} size={24} color="#fff" />
+          </View>
+        </View>
+        {!!nextAction.action && (
+          <Button title={nextAction.title} loading={savingStatus} onPress={() => runNextStepAction(nextAction.action)} style={styles.updateButton} />
+        )}
+        {['WASHING_OUT', 'AFTER_WASH_RECEIVED', 'PACKING_COMPLETED'].includes(record?.status) && (
+          <Button
+            title={record.status === 'WASHING_OUT' ? 'Open Washing Board' : record.status === 'AFTER_WASH_RECEIVED' ? 'Open QC Board' : 'Open Final Checking'}
+            variant="secondary"
+            onPress={() => runNextStepAction(record.status === 'WASHING_OUT' ? 'washing_board' : record.status === 'AFTER_WASH_RECEIVED' ? 'qc_board' : 'final_board')}
+          />
+        )}
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Job Summary</Text>
+        <View style={styles.summaryGrid}>
+          <SummaryItem label="Job Number" value={record?.jobNumber || '-'} />
+          <SummaryItem label="Style / Batch" value={record?.styleRef || record?.batchRef || '-'} />
+          <SummaryItem label="Issued Fabric" value={record?.issuedFabricQuantity ?? '-'} />
+          <SummaryItem label="Cut Pieces" value={record?.totalCutPieces ?? '-'} />
+          <SummaryItem label="Current Step" value={manufacturingLabel(record?.status)} />
+          <SummaryItem label="Issue Date" value={formatDate(record?.issueDate || record?.createdAt)} />
+        </View>
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Workflow Timeline</Text>
+        <View style={styles.stepper}>
+          {manufacturingSteps.map((step, index) => {
+            const done = index < currentProgress || record?.status === 'WAREHOUSE_RECEIVED';
+            const active = Math.floor(currentProgress) === index && record?.status !== 'WAREHOUSE_RECEIVED';
+            return (
+              <View key={step.key} style={styles.stepRow}>
+                <View style={styles.stepMarkerWrap}>
+                  <View style={[styles.stepMarker, done && styles.stepMarkerDone, active && styles.stepMarkerActive]}>
+                    <MaterialCommunityIcons name={done ? 'check' : active ? 'sync' : 'clock-outline'} size={13} color={done || active ? '#fff' : colors.muted} />
+                  </View>
+                  {index < manufacturingSteps.length - 1 ? <View style={[styles.stepLine, (done || active) && styles.stepLineDone]} /> : null}
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={[styles.stepTitle, (done || active) && styles.stepTitleDone]}>{step.label}</Text>
+                  <Text style={styles.stepMeta}>{active ? 'Current step' : done ? 'Completed' : 'Pending'}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Action Buttons</Text>
+        {isSupervisor && (
+          <View style={styles.actionGrid}>
+            <Button title="Assign Line" variant="secondary" onPress={() => runManufacturingAction('assign_line')} style={styles.actionButton} />
+            <Button title="Update Status" onPress={() => runManufacturingAction(record?.status === 'FABRIC_ISSUED' ? 'send_to_cutting' : 'update_status')} loading={savingStatus} style={styles.actionButton} />
+            <Button title="Approve QC" variant="secondary" onPress={() => runManufacturingAction('approve_qc')} style={styles.actionButton} />
+          </View>
+        )}
+        {isWorker && (
+          <View style={styles.actionGrid}>
+            <Button title="Start Work" variant="secondary" onPress={() => runManufacturingAction('start_work')} style={styles.actionButton} />
+            <Button title="Complete Step" onPress={() => runManufacturingAction('complete_line')} loading={savingStatus} style={styles.actionButton} />
+          </View>
+        )}
+        {isQc && (
+          <View style={styles.actionGrid}>
+            <Button title="Pass" variant="secondary" onPress={() => runManufacturingAction('qc_pass')} style={styles.actionButton} />
+            <Button title="Fail" variant="danger" onPress={() => runManufacturingAction('qc_fail')} style={styles.actionButton} />
+            <Button title="Add Remarks" variant="secondary" onPress={() => runManufacturingAction('qc_remarks')} style={styles.actionButton} />
+          </View>
+        )}
+      </Card>
+
+      <Card style={styles.section}>
+        <Text style={styles.sectionTitle}>Production Notes</Text>
+        <View style={styles.summaryGrid}>
+          <SummaryItem label="Fabric Used" value={record?.fabricUsedQty ?? '-'} />
+          <SummaryItem label="Fabric Waste" value={record?.fabricWasteQty ?? '-'} />
+          <SummaryItem label="Cutting Rejects" value={record?.cuttingRejectQty ?? '-'} />
+          <SummaryItem label="Updated" value={formatDateTime(record?.updatedAt || record?.createdAt)} />
+        </View>
+      </Card>
+
+      <Modal visible={!!manufacturingModal} transparent animationType="slide" onRequestClose={closeManufacturingModal}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={closeManufacturingModal} />
+          <View style={styles.bottomSheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.modalTitle}>
+              {manufacturingModal === 'cutting_form' ? 'Enter Cutting Results' : manufacturingModal === 'assign_line_form' ? 'Assign to Line' : 'Send to Washing'}
+            </Text>
+            <Text style={styles.modalSubtitle}>{record?.jobNumber || 'Job'} - {manufacturingLabel(record?.status)}</Text>
+
+            {manufacturingModal === 'cutting_form' && (
+              <>
+                <TextInput value={manufacturingForm.fabricUsedQty} onChangeText={(v) => updateManufacturingForm('fabricUsedQty', v)} placeholder="Fabric used quantity" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
+                <TextInput value={manufacturingForm.fabricWasteQty} onChangeText={(v) => updateManufacturingForm('fabricWasteQty', v)} placeholder="Fabric waste quantity" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
+                <TextInput value={manufacturingForm.totalCutPieces} onChangeText={(v) => updateManufacturingForm('totalCutPieces', v)} placeholder="Total cut pieces" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
+                <TextInput value={manufacturingForm.cuttingRejectQty} onChangeText={(v) => updateManufacturingForm('cuttingRejectQty', v)} placeholder="Cutting reject quantity" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
+                <Button title="Save Cutting Results" loading={savingStatus} onPress={submitCuttingResults} />
+              </>
+            )}
+
+            {manufacturingModal === 'assign_line_form' && (
+              <>
+                <Text style={styles.label}>Product</Text>
+                <View style={styles.statusGrid}>
+                  {manufacturingMeta.products.map((product) => (
+                    <Pressable key={product._id} onPress={() => updateManufacturingForm('productId', product._id)} style={({ pressed }) => [styles.statusOption, manufacturingForm.productId === product._id && styles.statusOptionSelected, pressed && styles.pressed]}>
+                      <Text style={[styles.statusOptionText, manufacturingForm.productId === product._id && styles.statusOptionTextSelected]}>{product.name || product.sku}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.label}>Line</Text>
+                <View style={styles.statusGrid}>
+                  {manufacturingMeta.lines.map((line) => {
+                    const lineName = line.name || line.slug;
+                    return (
+                      <Pressable key={line._id || lineName} onPress={() => updateManufacturingForm('lineName', lineName)} style={({ pressed }) => [styles.statusOption, manufacturingForm.lineName === lineName && styles.statusOptionSelected, pressed && styles.pressed]}>
+                        <Text style={[styles.statusOptionText, manufacturingForm.lineName === lineName && styles.statusOptionTextSelected]}>{lineName}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <TextInput value={manufacturingForm.assignedQuantity} onChangeText={(v) => updateManufacturingForm('assignedQuantity', v)} placeholder="Assigned quantity" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
+                <TextInput value={manufacturingForm.dispatchDate} onChangeText={(v) => updateManufacturingForm('dispatchDate', v)} placeholder="Dispatch date YYYY-MM-DD" placeholderTextColor={colors.muted} style={styles.noteInputSingle} />
+                <Button title="Assign Line" loading={savingStatus} onPress={submitLineAssignment} />
+              </>
+            )}
+
+            {manufacturingModal === 'washing_form' && (
+              <>
+                <TextInput value={manufacturingForm.quantitySent} onChangeText={(v) => updateManufacturingForm('quantitySent', v)} placeholder="Quantity sent to washing" placeholderTextColor={colors.muted} keyboardType="numeric" style={styles.noteInputSingle} />
+                <TextInput value={manufacturingForm.sentFrom} onChangeText={(v) => updateManufacturingForm('sentFrom', v)} placeholder="Sent from line/section" placeholderTextColor={colors.muted} style={styles.noteInputSingle} />
+                <Button title="Create Washing Gate Pass" loading={savingStatus} onPress={submitWashingTransfer} />
+              </>
+            )}
+
+            <Button title="Cancel" variant="secondary" disabled={savingStatus} onPress={closeManufacturingModal} />
+          </View>
+        </View>
+      </Modal>
+    </ScreenScaffold>
+  );
+}
+
+return (
+  <ScreenScaffold title={route.params?.title || titleFor(record)} subtitle="Record detail adapted for mobile review.">
+    <Card style={styles.hero}>
+      <Text style={styles.title}>{titleFor(record)}</Text>
+      <StatusPill value={record?.status || record?.state || record?.role} />
+    </Card>
+    <Card>
+      {detailEntries(record).map(([key, value]) => (
+        <View key={key} style={styles.field}>
+          <Text style={styles.label}>{readable(key)}</Text>
+          <Text style={styles.value}>{String(value)}</Text>
+        </View>
+      ))}
+    </Card>
+  </ScreenScaffold>
+);
 }
 
 function SummaryItem({ label, value }) {
