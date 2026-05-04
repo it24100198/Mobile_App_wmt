@@ -5,7 +5,7 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import ScreenScaffold from '../../components/ScreenScaffold';
 import StatusPill from '../../components/StatusPill';
-import { assignLines, completeLine, createWashingTransfer, getAssignLinesMeta, getCustomerOrder, getJob, saveCutting, sendJobToCutting, updateOrderStatus } from '../../api/client';
+import { assignLines, completeLine, createWashingTransfer, getAssignLinesMeta, getCustomerOrder, getHourlyRecords, getJob, saveCutting, sendJobToCutting, updateOrderStatus } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme/colors';
 import { detailEntries, titleFor } from '../../utils/dataShape';
