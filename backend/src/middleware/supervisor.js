@@ -46,6 +46,11 @@ export async function requireWashingSupervisor(req, res, next) {
  * Used for line complete.
  */
 export async function requireSupervisorOfLine(req, res, next) {
+  // Admin users can always complete lines, even without an Employee row
+  if (req.user?.role === 'admin') {
+    return next();
+  }
+
   const employee = await Employee.findOne({ userId: req.user._id }).populate('productionSectionId');
   if (!employee) return res.status(403).json({ error: 'Employee record not found' });
   const isLineSupervisor = employee.role === 'supervisor' || employee.role === 'line_supervisor' || employee.role === 'admin';

@@ -19,11 +19,7 @@ const safeText = (value, fallback = '') => {
     if (value.name) return String(value.name);
     if (value.title) return String(value.title);
     if (value.email) return String(value.email);
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return fallback;
-    }
+    return value._id || value.id ? 'Linked record' : fallback;
   }
   return String(value);
 };

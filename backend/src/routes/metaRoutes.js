@@ -265,6 +265,18 @@ router.put('/products/:id', async (req, res, next) => {
   }
 });
 
+router.delete('/products/:id', async (req, res, next) => {
+  try {
+    const product = await Product.findByIdAndDelete(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 router.get('/employees', requireRole('admin', 'manager'), async (req, res, next) => {
   try {
     const employees = await Employee.find()

@@ -12,6 +12,7 @@ import ModuleScreen from '../screens/main/ModuleScreen';
 import ProfileScreen from '../screens/main/ProfileScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ResourceScreen from '../screens/main/ResourceScreen';
+import HourlyProductionScreen from '../screens/main/HourlyProductionScreen';
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme/colors';
 
@@ -50,6 +51,7 @@ function WorkspaceStack() {
       <Stack.Screen name="DashboardHome" component={DashboardScreen} options={{ title: 'Dashboard' }} />
       <Stack.Screen name="Module" component={ModuleScreen} options={({ route }) => ({ title: route.params?.title || 'Module' })} />
       <Stack.Screen name="Resource" component={ResourceScreen} options={({ route }) => ({ title: route.params?.title || 'Records' })} />
+      <Stack.Screen name="HourlyProduction" component={HourlyProductionScreen} options={{ title: 'Hourly Production' }} />
       <Stack.Screen name="Detail" component={DetailScreen} options={({ route }) => ({ title: route.params?.title || 'Detail' })} />
       <Stack.Screen name="Form" component={FormScreen} options={({ route }) => ({ title: route.params?.title || 'Add Record' })} />
     </Stack.Navigator>

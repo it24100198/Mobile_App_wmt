@@ -34,7 +34,19 @@ export async function getDashboard(userId) {
 
 export async function completeLine(jobId, userId) {
   const employee = await Employee.findOne({ userId }).populate('productionSectionId');
-  if (!employee) throw new Error('Employee record not found');
+
+  // Admin users (from User.role) may not have an Employee row – allow them to
+  // complete any line directly.
+  if (!employee) {
+    // If caller passed middleware admin bypass, just complete the job
+    const job = await ManufacturingJob.findById(jobId);
+    if (!job) throw new Error('Job not found');
+    assertTransition(job.status, JOB_STATUS.LINE_COMPLETED);
+    job.status = JOB_STATUS.LINE_COMPLETED;
+    await job.save();
+    return job.toObject();
+  }
+
   const isLineSupervisor = employee.role === 'line_supervisor' || employee.role === 'admin';
   if (!isLineSupervisor) throw new Error('Only line supervisor can complete line');
   const job = await ManufacturingJob.findById(jobId);
